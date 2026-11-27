@@ -190,18 +190,22 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
-      - name: 解码签名密钥 Decode Keystore
+      - name: 准备 Debug 签名密钥 Prepare Debug Keystore
         if: github.event_name != 'pull_request'
-        env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-        run: echo "$SIGNING_KEY" | base64 -d > release.jks
+        run: |
+          set -euo pipefail
+          KEYSTORE="$HOME/.android/debug.keystore"
+          if [[ ! -f "$KEYSTORE" ]]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -noprompt -keystore "$KEYSTORE" \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: 签名 Debug APK Sign Debug APK
         if: github.event_name != 'pull_request'
         env:
-          STORE_PASS: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ALIAS }}
           CHANNEL: ${{ needs.gate.outputs.channel }}
           V_NAME: ${{ needs.gate.outputs.full_name }}
           V_CODE: ${{ needs.gate.outputs.code }}
@@ -212,6 +216,12 @@ jobs:
           ZA="$BTDIR/zipalign"
           AS="$BTDIR/apksigner"
 
+          # 本 fork 用标准 Android debug keystore 签名：alias androiddebugkey，密码 android。
+          KEYSTORE="$HOME/.android/debug.keystore"
+          KEY_ALIAS="androiddebugkey"
+          STORE_PASS="android"
+          KEY_PASS="android"
+
           DEBUG_IN=$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*-debug.apk' -print -quit)
           test -n "$DEBUG_IN"
 
@@ -219,10 +229,10 @@ jobs:
           # minSdk 33：v1（JAR）签名只给 Android 7.0 以下用，apksigner 默认仍会附上（约 45 KB）。
           $AS sign \
             --v1-signing-enabled false \
-            --ks release.jks \
-            --ks-pass env:STORE_PASS \
+            --ks "$KEYSTORE" \
+            --ks-pass pass:"$STORE_PASS" \
             --ks-key-alias "$KEY_ALIAS" \
-            --key-pass env:KEY_PASS \
+            --key-pass pass:"$KEY_PASS" \
             --out "HyperLyrics Enhanced-debug-v${V_NAME}-${V_CODE}.apk" \
             debug-aligned.apk
 
@@ -232,10 +242,10 @@ jobs:
             $ZA -f -v -p 4 "$RELEASE_IN" release-aligned.apk
             $AS sign \
               --v1-signing-enabled false \
-              --ks release.jks \
-              --ks-pass env:STORE_PASS \
+              --ks "$KEYSTORE" \
+              --ks-pass pass:"$STORE_PASS" \
               --ks-key-alias "$KEY_ALIAS" \
-              --key-pass env:KEY_PASS \
+              --key-pass pass:"$KEY_PASS" \
               --out "HyperLyrics Enhanced-release-v${V_NAME}-${V_CODE}.apk" \
               release-aligned.apk
           fi
@@ -319,7 +329,7 @@ jobs:
           echo "$BODY_DELIMITER" >> "$GITHUB_OUTPUT"
 
       - name: 创建正式版发布 Create Stable Release
-        if: github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
+        if: github.repository == 'juren233/HyperLyrics-Enhanced' && github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.gate.outputs.full_name }}
@@ -353,7 +363,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 同步 LSPosed 仓库资料 Sync LSPosed Metadata
-        if: github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
+        if: github.repository == 'juren233/HyperLyrics-Enhanced' && github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
           LSP_REPO: Xposed-Modules-Repo/com.juren233.hyperlyricsenhanced
@@ -384,7 +394,7 @@ jobs:
           fi
 
       - name: 发布到 LSPosed 仓库 Publish LSPosed Release
-        if: github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
+        if: github.repository == 'juren233/HyperLyrics-Enhanced' && github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
           LSP_REPO: Xposed-Modules-Repo/com.juren233.hyperlyricsenhanced
