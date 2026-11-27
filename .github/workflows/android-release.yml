@@ -328,8 +328,19 @@ jobs:
           .github/scripts/generate-release-body.sh HEAD "$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "$BODY_DELIMITER" >> "$GITHUB_OUTPUT"
 
+      - name: 对齐版本标签 Align Release Tag
+        if: github.repository == 'Esdux/HyperLyrics-Enhanced' && github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
+        run: |
+          set -euo pipefail
+          TAG="v${{ needs.gate.outputs.full_name }}"
+          current="$(git rev-parse "$TAG" 2>/dev/null || true)"
+          if [[ "$current" != "$GITHUB_SHA" ]]; then
+            git tag -f "$TAG" "$GITHUB_SHA"
+            git push --force origin "refs/tags/$TAG"
+          fi
+
       - name: 创建正式版发布 Create Stable Release
-        if: github.repository == 'juren233/HyperLyrics-Enhanced' && github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
+        if: github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.gate.outputs.full_name }}
